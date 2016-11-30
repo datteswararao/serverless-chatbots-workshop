@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+
+#
+# Lambda Functions
+#
+
+  # facebook-page-webhook
+  FBWebhook:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: facebook-page-webhook.handler
+      Runtime: nodejs4.3
+      CodeUri: 's3://serverless-chatbot-code/facebook-page-webhook.zip'
+      Timeout: 60
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Environment:
+        Variables:
+          FACEBOOK_PAGE_ID: '123456789'
+          FACEBOOK_ACCESS_TOKEN: '1q2w3e4r5t6y7u8i9'
+      Events:
+        GetResource:
+          Type: Api
+          Properties:
+            Path: /facebook-page-webhook
+            Method: get
+        PostResource:
+          Type: Api
+          Properties:
+            Path: /facebook-page-webhook
+            Method: post
+
+  # slack-app
+  SlackApp:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: slack-app.handler
+      Runtime: nodejs4.3
+      CodeUri: 's3://serverless-chatbot-code/slack-app.zip'
+      Timeout: 60
+      Policies:
+        - AmazonDynamoDBFullAccess
+      Environment:
+        Variables:
+          FACEBOOK_PAGE_ID: '123456789'
+          SLACK_CHANNEL_ID: 'C1Q2W3E4R'
+          SLACK_CLIENT_ID: '123456789'
+          SLACK_CLIENT_SECRET: '123456789'
+      Events:
+        GetResource:
+          Type: Api
+          Properties:
+            Path: /slack-app
+            Method: ANY
+
+  # facebook-message-event
+  FBMessageEvent:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: facebook-message-event.handler
+      Runtime: nodejs4.3
+      CodeUri: 's3://serverless-chatbot-code/facebook-message-event.zip'
+      Timeout: 180
+      Policies:
+        - AmazonDynamoDBFullAccess
+        - AmazonESFullAccess
+        - AWSLambdaFullAccess
+      Environment:
+        Variables:
+          FACEBOOK_PAGE_ID: '123456789'
+          FACEBOOK_ACCESS_TOKEN: '1q2w3e4r5t6y7u8i9'
+          ES_ENDPOINT : 'https://your-endpoint/'
+          LAMBDA_SENTIMENT_ANALYSIS: !Ref SentimentAnalysis
+          LAMBDA_NLP: !Ref NLP
+          LAMBDA_SLACK: !Ref SlackApp
+
+  # sentiment-analysis
+  SentimentAnalysis:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: python2.7
+      CodeUri: 's3://serverless-chatbot-code/sentiment-analysis.zip'
+      Timeout: 60
+
+  # nlp-processing
+  NLP:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: index.handler
+      Runtime: python2.7
+      CodeUri: 's3://serverless-chatbot-code/nlp.zip'
+      Timeout: 60
+
+  # knowledgebase-loader
+  KnowledgeBase:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: loader.handler
+      Runtime: nodejs4.3
+      CodeUri: 's3://serverless-chatbot-code/knowledge-base.zip'
+      Timeout: 180
+      Policies:
+        - AmazonESFullAccess
+      Environment:
+        Variables:
+          ES_ENDPOINT : 'https://your-endpoint/'
+
+#
+# DynamoDB Tables
+#
+  TableFacebookMessages:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: messageId
+          AttributeType: S
+        -
+          AttributeName: page_id
+          AttributeType: S
+        -
+          AttributeName: date
+          AttributeType: S
+
+      GlobalSecondaryIndexes:
+        -
+          IndexName: page_id-date-index
+          KeySchema:
+            -
+              AttributeName: page_id
+              KeyType: HASH
+            -
+              AttributeName: date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+
+      KeySchema:
+        -
+          AttributeName: messageId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      TableName: facebook-messages
+
+
+  TableSlackAppChannels:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: channel_id
+          AttributeType: S
+
+      KeySchema:
+        -
+          AttributeName: channel_id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      TableName: slack-app-channels
